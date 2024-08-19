@@ -1,6 +1,7 @@
 import pygame
 import json
 
+
 class Actor(pygame.sprite.Sprite):
     def __init__(self, image, x, y):
         super().__init__()
@@ -11,31 +12,40 @@ class Actor(pygame.sprite.Sprite):
         surface.blit(self.image, self.rect.topleft)
 
 
-class Level1:
+class Level4:
     def __init__(self):
         self.GRID_SIZE = 50
-        self.WIDTH, self.HEIGHT = 800, 600
-        self.GUARD_MOVE_INTERVAL = 500  # Tiempo en milisegundos entre movimientos de los guardias
+        self.WIDTH, self.HEIGHT = 800, 600  # Adjust according to your map size
+        self.GUARD_MOVE_INTERVAL = 50  # Time in milliseconds between guard moves
 
-        # Cargar el archivo .tmj como JSON
-        with open('levels/level1.tmj') as f:
+        # Load the map data from the JSON file
+        with open('levels/level4.tmj') as f:
             self.map_data = json.load(f)
 
-        # Cargar imágenes del knight, los guardias y las llaves
+        # Load actor images
         self.knight_image = pygame.image.load('images/player.png')
         self.guard_image = pygame.image.load('images/guard.png')
         self.key_image = pygame.image.load('images/key.png')
 
-        # Configurar personajes y objetos
+        # Set up the game objects
         self.setup_game()
 
-        # Tiempo para mover guardias
+        # Initialize guard move timing
         self.last_guard_move_time = pygame.time.get_ticks()
 
     def setup_game(self):
         self.knight = None
         self.keys_to_collect = []
         self.guards = []
+
+        guard_routes = {
+            7: [(151, 500), (151, 451), (151, 400), (151, 451), (151, 501)],  # avec ID 7
+            8: [(250, 349), (250, 299), (301, 299), (250, 299), (250, 349)],  # avec ID 8
+            9: [(350, 100), (350, 150), (400, 150), (350, 150), (350, 100)],  # avec ID 9
+            10: [(650, 300), (600, 250), (600, 300), (600, 250), (650, 300)],  # avec ID 10
+            11: [(600, 450), (650, 450), (700, 450), (650, 450), (600, 450)],  # avec ID 11
+
+        }
 
         # Configurar los objetos desde la capa de objetos
         for layer in self.map_data['layers']:
@@ -52,10 +62,11 @@ class Level1:
                             Actor(self.key_image, grid_x * self.GRID_SIZE, grid_y * self.GRID_SIZE))
                     elif obj.get('name') == "Guard":
                         guard = Actor(self.guard_image, grid_x * self.GRID_SIZE, grid_y * self.GRID_SIZE)
-                        # Los guardias se moverán horizontalmente de ida y vuelta
-                        route = [(grid_x + i, grid_y) for i in
-                                 range(-2, 3)]  # Se moverán entre 5 casillas horizontalmente
-                        self.keys_to_collect.append(Actor(self.key_image, 
+                        guard_id = obj.get('id')  # Obtener el ID del guardia
+
+                        # Asignar la ruta de movimiento según el ID del guardia
+                        route = guard_routes.get(guard_id, [(grid_x, grid_y)])  # Ruta predeterminada si no se encuentra
+
                         self.guards.append({'actor': guard, 'route': route, 'route_index': 0, 'direction': 1})
 
         self.game_over = False
@@ -76,15 +87,16 @@ class Level1:
                             screen.blit(tile_image, (x, y))
 
     def get_tile_image(self, tile_id):
-        # Asignar imágenes a los IDs de los tiles según su orden en el archivo .tmj
+        # Load tile images based on tile IDs
         tileset = {
-            3: pygame.image.load('images/floor1.png'),
-            2: pygame.image.load('images/floor2.png'),
+            2: pygame.image.load('images/floor1.png'),
+            3: pygame.image.load('images/floor2.png'),
             1: pygame.image.load('images/door.png'),
             4: pygame.image.load('images/wall.png'),
-            7: pygame.image.load('images/crack1.png'),
+            5: pygame.image.load('images/crack1.png'),
             8: pygame.image.load('images/crack2.png'),
-            # Añadir más tiles según sea necesario
+            7: pygame.image.load('images/crack1.png'),
+            # Add more tiles as necessary
         }
         return tileset.get(tile_id)
 
@@ -125,19 +137,13 @@ class Level1:
         self.__init__()
 
     def can_move_to(self, x, y):
-        # Verificar si las coordenadas están dentro del rango del mapa
-        if x < 0 or y < 0 or x >= self.map_data['layers'][0]['width'] or y >= self.map_data['layers'][0]['height']:
-            return False
-
         tile_layer = self.map_data['layers'][0]['data']
-        width = self.map_data['layers'][0]['width']
+        width = self.map_data['width']
         tile_id = tile_layer[y * width + x]
-                                                       
-        # El knight no puede moverse a una pared (tile_id 4) ni a crack1 o crack2 (tile_id 7 y 8)
-        if tile_id in [4, 7, 8]:
+
+        if tile_id in [4]:  # Wall
             return False
-        # El knight solo puede moverse a la puerta (tile_id 1) si ha recogido todas las llaves
-        if tile_id == 1 and len(self.keys_to_collect) > 0:
+        if tile_id == 1 and len(self.keys_to_collect) > 0:  # Door tile, but keys are not collected
             return False
         return True
 
@@ -145,40 +151,36 @@ class Level1:
         if self.game_over:
             return
 
-        # Calcular nuevas coordenadas
         new_x = self.knight.rect.x // self.GRID_SIZE + dx
         new_y = self.knight.rect.y // self.GRID_SIZE + dy
 
         if self.can_move_to(new_x, new_y):
             self.knight.rect.move_ip(dx * self.GRID_SIZE, dy * self.GRID_SIZE)
 
-        # Verificar colisiones con llaves
         for key in self.keys_to_collect[:]:
-            if self.knight.rect.topleft == key.rect.topleft:  # Verifica si están en la misma casilla
+            if self.knight.rect.topleft == key.rect.topleft:
                 self.keys_to_collect.remove(key)
 
-        # Verificar colisiones con guardias
         self.check_guard_collision()
 
-        # Verificar si el nivel ha sido completado
         if self.is_completed():
             self.game_over = True
             self.knight_won = True
 
     def move_guard(self, guard):
-        next_index = guard['route_index'] + guard['direction']
-
-        # Cambiar la dirección si el guardia llega al final o al principio de la ruta
-        if next_index >= len(guard['route']) or next_index < 0:
-            guard['direction'] *= -1
-            next_index = guard['route_index'] + guard['direction']
-
+        # Determina el próximo índice en la ruta del guardia
+        next_index = (guard['route_index'] + 1) % len(guard['route'])
         next_x, next_y = guard['route'][next_index]
-        guard['actor'].rect.topleft = (next_x * self.GRID_SIZE, next_y * self.GRID_SIZE)
+
+        # Actualiza la posición del guardia
+        guard['actor'].rect.topleft = (next_x, next_y)  # Ya está en coordenadas de píxel
         guard['route_index'] = next_index
+
+        # Verifica si el guardia colisiona con el jugador
         self.check_guard_collision()
 
     def move_guards(self):
+        # Controla el temporizador de movimiento de los guardias
         current_time = pygame.time.get_ticks()
         if (current_time - self.last_guard_move_time) > self.GUARD_MOVE_INTERVAL:
             for guard in self.guards:
@@ -187,7 +189,7 @@ class Level1:
 
     def check_guard_collision(self):
         for guard in self.guards:
-            if self.knight.rect.topleft == guard['actor'].rect.topleft:  # Verifica si están en la misma casilla
+            if self.knight.rect.colliderect(guard['actor'].rect):
                 self.game_over = True
                 self.knight_won = False
 
@@ -199,6 +201,6 @@ class Level1:
         knight_x = self.knight.rect.x // self.GRID_SIZE
         knight_y = self.knight.rect.y // self.GRID_SIZE
         tile_layer = self.map_data['layers'][0]['data']
-        width = self.map_data['layers'][0]['width']
+        width = self.map_data['width']
         tile_id = tile_layer[knight_y * width + knight_x]
         return tile_id == 1 and len(self.keys_to_collect) == 0 and not self.game_over
